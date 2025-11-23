@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:barcode_widget/barcode_widget.dart';
 import 'screens/scan_screen.dart';
+import 'screens/add_product_screen.dart';
 import 'screens/product_list_screen.dart';
 import 'services/api_service.dart';
 import 'models/product_model.dart';
 
 void main() {
+  ApiService.init(); // انتخاب اتوماتیک URL API
   runApp(const YookaApp());
 }
 
@@ -14,12 +18,12 @@ class YookaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Yooka',
+      title: 'Yooka – یوکا',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-        useMaterial3: true,
         fontFamily: 'Vazirmatn',
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
       ),
       home: const HomeScreen(),
     );
@@ -37,108 +41,75 @@ class _HomeScreenState extends State<HomeScreen> {
   String? scannedCode;
   Product? scannedProduct;
 
+  /// تاریخچه آخرین ۵ بارکد
+  List<String> barcodeHistory = [];
+
+  void _addBarcodeToHistory(String code) {
+    if (!barcodeHistory.contains(code)) {
+      barcodeHistory.insert(0, code);
+      if (barcodeHistory.length > 5) {
+        barcodeHistory.removeLast();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Yooka – آنالیز محصول'),
+        title: const Text('یوکا – آنالیز محصول'),
         centerTitle: true,
       ),
-      body: Center(
+      body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(20),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.qr_code_scanner, size: 100, color: Colors.green),
-              const SizedBox(height: 20),
+              const Icon(Icons.qr_code_scanner, size: 90, color: Colors.green),
+              const SizedBox(height: 10),
               const Text(
                 'برای اسکن یا مشاهده محصولات، یکی از گزینه‌های زیر را انتخاب کنید',
-                style: TextStyle(fontSize: 16),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 30),
 
-              /// --- دکمه اسکن ---
+              // دکمه اسکن
               ElevatedButton.icon(
-                onPressed: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ScanScreen()),
-                  );
-
-                  if (result != null && mounted) {
-                    setState(() => scannedCode = result.toString());
-                    try {
-                      final product = await ApiService.getProductByBarcode(result.toString());
-                      if (product != null) {
-                        setState(() => scannedProduct = Product.fromJson(product));
-                        _showProductDialog(scannedProduct!);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('محصولی با این بارکد یافت نشد')),
-                        );
-                      }
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('خطا در اتصال به سرور: $e')),
-                      );
-                    }
-                  }
-                },
+                onPressed: _scanBarcode,
                 icon: const Icon(Icons.camera_alt),
                 label: const Text('اسکن محصول'),
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
                   backgroundColor: Colors.green.shade700,
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                 ),
               ),
 
               const SizedBox(height: 15),
 
-              /// --- دکمه لیست محصولات ---
+              // دکمه لیست محصولات
               ElevatedButton.icon(
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ProductListScreen()),
-                  );
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ProductListScreen()));
                 },
                 icon: const Icon(Icons.list_alt),
                 label: const Text('لیست محصولات'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green.shade400,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                 ),
               ),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 30),
 
-              /// --- نمایش آخرین اسکن ---
-              if (scannedProduct != null) ...[
-                const Text(
-                  'آخرین محصول اسکن‌شده:',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                Card(
-                  color: scannedProduct!.color.withOpacity(0.1),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: scannedProduct!.color,
-                      child: Text(
-                        scannedProduct!.overallScore.toString(),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    title: Text(scannedProduct!.name),
-                    subtitle: Text('وضعیت: ${scannedProduct!.healthLevel}'),
-                  ),
-                ),
-              ],
+              // کارت نمایش بارکد اسکن‌شده
+              if (scannedCode != null) _buildScannedBarcodeCard(),
+
+              const SizedBox(height: 20),
+
+              // نمایش تاریخچه آخرین ۵ بارکد
+              if (barcodeHistory.isNotEmpty) _buildHistoryList(),
             ],
           ),
         ),
@@ -146,55 +117,133 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// --- نمایش جزئیات محصول در Dialog ---
+  /// اسکن بارکد
+  Future<void> _scanBarcode() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ScanScreen()),
+    );
+
+    if (result != null) {
+      setState(() {
+        scannedCode = result.toString();
+        _addBarcodeToHistory(result.toString());
+      });
+
+      final product = await ApiService.getProductByBarcode(result.toString());
+      if (product != null) {
+        scannedProduct = Product.fromJson(product);
+        _showProductDialog(scannedProduct!);
+      } else {
+        _showProductNotFoundDialog(result.toString());
+      }
+    }
+  }
+
+  /// UI کارت بارکد اسکن‌شده
+  Widget _buildScannedBarcodeCard() {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.qr_code_2, size: 30, color: Colors.green),
+                const SizedBox(width: 10),
+                const Text('بارکد اسکن‌شده', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.copy, color: Colors.blue),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: scannedCode!));
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('بارکد کپی شد')));
+                  },
+                )
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            // نمایش شماره بارکد
+            SelectableText(
+              scannedCode!,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 20),
+
+            // نمایش تصویر بارکد
+            BarcodeWidget(
+              data: scannedCode!,
+              barcode: Barcode.code128(),
+              width: 230,
+              height: 80,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// تاریخچه بارکدها
+  Widget _buildHistoryList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('آخرین بارکدهای اسکن‌شده:',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        ...barcodeHistory.map((code) => ListTile(
+              leading: const Icon(Icons.history, color: Colors.grey),
+              title: Text(code),
+              trailing: IconButton(
+                icon: const Icon(Icons.copy, color: Colors.blue),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: code));
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('بارکد کپی شد')));
+                },
+              ),
+            )),
+      ],
+    );
+  }
+
+  /// پیام محصول یافت نشد
+  void _showProductNotFoundDialog(String barcode) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('محصول یافت نشد'),
+        content: Text('محصولی با بارکد $barcode در دیتابیس موجود نیست.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('بستن')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => AddProductScreen(barcode: barcode)),
+              );
+            },
+            child: const Text('افزودن محصول'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// نمایش اطلاعات محصول
   void _showProductDialog(Product product) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(product.name),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('بارکد: ${product.barcode}'),
-              const SizedBox(height: 10),
-              Text('امتیاز: ${product.overallScore} / 100'),
-              const SizedBox(height: 10),
-              Text('وضعیت: ${product.healthLevel}'),
-              const Divider(),
-              const Text('افزودنی‌ها:'),
-              const SizedBox(height: 8),
-              ...product.additives.map((a) {
-                Color riskColor;
-                switch (a.riskLevel) {
-                  case 'safe':
-                    riskColor = Colors.green.shade700;
-                    break;
-                  case 'low':
-                    riskColor = Colors.green.shade300;
-                    break;
-                  case 'medium':
-                    riskColor = Colors.orange.shade600;
-                    break;
-                  case 'high':
-                    riskColor = Colors.red.shade700;
-                    break;
-                  default:
-                    riskColor = Colors.grey;
-                }
-
-                return Card(
-                  color: riskColor.withOpacity(0.15),
-                  child: ListTile(
-                    title: Text('${a.code} - ${a.name}'),
-                    subtitle: Text('سطح خطر: ${a.riskLevel}'),
-                    leading: Icon(Icons.circle, color: riskColor, size: 12),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
+        content: Text('امتیاز: ${product.overallScore}\nبارکد: ${product.barcode}'),
       ),
     );
   }

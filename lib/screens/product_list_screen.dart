@@ -19,7 +19,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
   }
 
   Future<List<Product>> _fetchProducts() async {
-    final data = await ApiService.getProducts();
+    final data = await ApiService.getAllProducts();
     return data.map<Product>((p) => Product.fromJson(p)).toList();
   }
 

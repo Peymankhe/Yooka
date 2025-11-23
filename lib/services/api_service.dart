@@ -1,39 +1,67 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:3000/api/v1';
-  //static const String baseUrl = 'http://10.0.2.2:3000/api/v1'; 
-  // توجه: در شبیه‌ساز اندروید به‌جای localhost از 10.0.2.2 استفاده می‌کنیم
+  static late String baseUrl;
 
-  static Future<List<dynamic>> getProducts() async {
-    final url = Uri.parse('$baseUrl/products');
-    final response = await http.get(url);
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
+  /// انتخاب آدرس API بر اساس Web / Android / iOS
+  static void init() {
+    if (kIsWeb) {
+      baseUrl = "http://localhost:3000"; // برای اجرای روی Web
     } else {
-      throw Exception('خطا در دریافت لیست محصولات');
+      baseUrl = "http://10.0.2.2:3000"; // مخصوص Android emulator
     }
   }
 
-  static Future<Map<String, dynamic>?> getProductByBarcode(String code) async {
-    final url = Uri.parse('$baseUrl/products');
-    final response = await http.get(url);
+  /// گرفتن محصول بر اساس بارکد
+  static Future<Map<String, dynamic>?> getProductByBarcode(String barcode) async {
+    try {
+      final url = Uri.parse("$baseUrl/api/v1/products/barcode/$barcode");
+      final response = await http.get(url);
 
-    if (response.statusCode == 200) {
-      final List data = json.decode(response.body);
-      try {
-        // پیدا کردن محصول با بارکد مشابه
-        return data.firstWhere(
-          (item) => item['barcode'] == code,
-          orElse: () => null,
-        );
-      } catch (_) {
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
         return null;
       }
-    } else {
-      throw Exception('خطا در اتصال به سرور');
+    } catch (e) {
+      debugPrint("❌ Error getProductByBarcode: $e");
+      return null;
+    }
+  }
+
+  /// دریافت تمام محصولات
+  static Future<List<dynamic>> getAllProducts() async {
+    try {
+      final url = Uri.parse("$baseUrl/api/v1/products");
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return [];
+    } catch (e) {
+      debugPrint("❌ Error getAllProducts: $e");
+      return [];
+    }
+  }
+
+  /// افزودن یک محصول جدید
+  static Future<bool> addProduct(Map<String, dynamic> productData) async {
+    try {
+      final url = Uri.parse("$baseUrl/api/v1/products");
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(productData),
+      );
+
+      return response.statusCode == 201;
+    } catch (e) {
+      debugPrint("❌ Error addProduct: $e");
+      return false;
     }
   }
 }
